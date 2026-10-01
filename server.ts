@@ -45,6 +45,29 @@ import { generateBatchFixedCards, verifyBingoCard, getBingoLetter } from './src/
 import { Game, WinnerRecord, Agent, AgentStatus } from './src/types/bingo';
 
 const app = express();
+
+const allowedOrigin =
+  process.env.FRONTEND_URL || 'https://ellabingo.vercel.app';
+
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', allowedOrigin);
+  res.header('Vary', 'Origin');
+  res.header(
+    'Access-Control-Allow-Methods',
+    'GET,POST,PUT,DELETE,OPTIONS'
+  );
+  res.header(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization'
+  );
+
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+
+  next();
+});
+
 const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json());
