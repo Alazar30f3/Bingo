@@ -11,8 +11,3 @@ coverage/
 data/
 *.sqlite
 *.sqlite-journal
-
-# Local database
-data/
-*.sqlite
-*.sqlite-journal
