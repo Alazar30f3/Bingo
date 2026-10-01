@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EilaBingo  System</title>
+    <meta name="description" content="Offline-first PC Bingo Management System with fixed physical printed card verification, caller board, agent credit ledger, and idempotent sync." />
+    <meta property="og:title" content="EilaBingo Management System" />
+    <meta property="og:description" content="Offline-first PC Bingo Management System with fixed physical printed card verification, caller board, agent credit ledger, and idempotent sync." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+    <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
+    <script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
+    <script>
+      // Global safeguard against polyfills or libraries trying to set window.fetch in environments with getter-only fetch
+      (function() {
+        try {
+          const _nativeFetch = window.fetch ? window.fetch.bind(window) : null;
+          let _currentFetch = _nativeFetch;
+          Object.defineProperty(window, 'fetch', {
+            get() {
+              return _currentFetch || _nativeFetch;
+            },
+            set(newFetch) {
+              _currentFetch = typeof newFetch === 'function' ? newFetch : _nativeFetch;
+            },
+            configurable: true,
+            enumerable: true
+          });
+        } catch (e) {
+          // Ignore if cannot be overridden
+        }
+      })();
+    </script>
+  </head>
+  <body class="bg-slate-900 text-slate-100 antialiased font-sans">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

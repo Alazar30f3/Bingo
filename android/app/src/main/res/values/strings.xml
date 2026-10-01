@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">EilaBingo</string>
+    <string name="title_activity_main">EilaBingo</string>
+    <string name="package_name">com.eilabingo.app</string>
+    <string name="custom_url_scheme">com.eilabingo.app</string>
+</resources>

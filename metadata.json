@@ -1,0 +1,6 @@
+{
+  "name": "ElaBingo ",
+  "description": "Offline-first PC Bingo Management System with fixed physical printed card verification, caller board, agent credit ledger, and idempotent sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
