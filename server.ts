@@ -41,7 +41,7 @@ import {
   mongoDeleteCard,
 } from './server/mongo';
 import { syncManager } from './server/syncEngine';
-import { generateBatchFixedCards, verifyBingoCard, getBingoLetter } from './src/utils/bingoEngine';
+import { verifyBingoCard, getBingoLetter } from './src/utils/bingoEngine';
 import { Game, WinnerRecord, Agent, AgentStatus } from './src/types/bingo';
 
 const app = express();
@@ -249,7 +249,7 @@ app.get('/api/cards/:cardId', async (req, res) => {
 });
 
 // Fixed Card Generator (Super Admin)
-app.post('/api/cards/generate', async (req, res) => {
+/*app.post('/api/cards/generate', async (req, res) => {
   try {
     const { count = 50, startNumber = 1, prefix = 'CARD-' } = req.body;
     const cards = generateBatchFixedCards(Number(count), Number(startNumber), String(prefix));
@@ -265,7 +265,7 @@ app.post('/api/cards/generate', async (req, res) => {
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
-});
+});*/
 
 // Delete Card (Super Admin)
 app.delete('/api/cards/:cardId', async (req, res) => {
