@@ -276,7 +276,7 @@ function initSchema(database: Database) {
   // Seed default fixed bingo cards (CARD-0001 to CARD-0050) if empty
   const cardCountRes = database.exec('SELECT COUNT(*) as count FROM bingo_cards');
   if (cardCountRes.length === 0 || cardCountRes[0].values[0][0] === 0) {
-    const seedCards = generateBatchFixedCards(50, 1, 'CARD-');
+    const seedCards = generateBatchFixedCards(75, 1, 'CARD-');
     for (const c of seedCards) {
       database.run(
         'INSERT INTO bingo_cards (cardId, bNumbers, iNumbers, nNumbers, gNumbers, oNumbers, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
