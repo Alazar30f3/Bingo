@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { Agent, BingoCard, Game, SystemSettings, Transaction, WinnerRecord, SyncQueueItem } from '../src/types/bingo';
-import { generateBatchFixedCards } from '../src/utils/bingoEngine';
+
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 export const DB_FILE = path.join(DATA_DIR, 'bingo_local.sqlite');
@@ -275,35 +275,6 @@ function initSchema(database: Database) {
 
   // Seed default fixed bingo cards (CARD-0001 to CARD-0050) if empty
  
-const cardCountRes = database.exec('SELECT COUNT(*) as count FROM bingo_cards');
-const currentCardCount =
-  cardCountRes.length > 0 ? Number(cardCountRes[0].values[0][0]) : 0;
-
-if (currentCardCount < 75) {
-  const cardsNeeded = 75 - currentCardCount;
-
-  const seedCards = generateBatchFixedCards(
-    cardsNeeded,
-    currentCardCount + 1,
-    'CARD-'
-  );
-
-  for (const c of seedCards) {
-    database.run(
-      'INSERT INTO bingo_cards (cardId, bNumbers, iNumbers, nNumbers, gNumbers, oNumbers, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [
-        c.cardId,
-        JSON.stringify(c.bNumbers),
-        JSON.stringify(c.iNumbers),
-        JSON.stringify(c.nNumbers),
-        JSON.stringify(c.gNumbers),
-        JSON.stringify(c.oNumbers),
-        c.status,
-        c.createdAt,
-      ]
-    );
-  }
-}
 
   // Seed default system settings
   const defaultSettings: SystemSettings = {
