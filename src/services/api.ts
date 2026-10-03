@@ -70,9 +70,6 @@ export const api = {
     return http(`/api/cards/${encodeURIComponent(cardId)}`);
   },
 
-  async generateCards(count: number, startNumber: number, prefix: string = 'CARD-'): Promise<{ success: boolean; generated?: number; firstCardId?: string; lastCardId?: string; count?: number; cards?: BingoCard[]; error?: string }> {
-    return http('/api/cards/generate', { method: 'POST', body: JSON.stringify({ count, startNumber, prefix }) });
-  },
 
   async deleteCard(cardId: string): Promise<{ success: boolean; message?: string; error?: string }> {
     return http(`/api/cards/${encodeURIComponent(cardId)}`, { method: 'DELETE' });
