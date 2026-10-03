@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from './sqlite';
 import { Agent, BingoCard, Game, SystemSettings, Transaction, WinnerRecord, SyncQueueItem } from '../types/bingo';
-import { generateBatchFixedCards } from '../utils/bingoEngine';
+
 
 async function runQuery(sql: string, params: any[] = []): Promise<any[]> {
   const database = getDb();
@@ -76,25 +76,7 @@ export async function seedDefaultData(): Promise<void> {
     }
   }
 
-  const cardCountRes = await runQuery('SELECT COUNT(*) as count FROM bingo_cards');
-  if (cardCountRes.length === 0 || cardCountRes[0].count === 0) {
-    const seedCards = generateBatchFixedCards(50, 1, 'CARD-');
-    for (const c of seedCards) {
-      await runExecute(
-        'INSERT INTO bingo_cards (cardId, bNumbers, iNumbers, nNumbers, gNumbers, oNumbers, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [
-          c.cardId,
-          JSON.stringify(c.bNumbers),
-          JSON.stringify(c.iNumbers),
-          JSON.stringify(c.nNumbers),
-          JSON.stringify(c.gNumbers),
-          JSON.stringify(c.oNumbers),
-          c.status,
-          c.createdAt,
-        ]
-      );
-    }
-  }
+
 
   const defaultSettings: SystemSettings = {
     gameCost: 50,
