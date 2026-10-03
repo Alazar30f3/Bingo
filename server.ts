@@ -269,14 +269,10 @@ app.get('/api/cards/:cardId', async (req, res) => {
 
 // Delete Card (Super Admin)
 app.delete('/api/cards/:cardId', async (req, res) => {
-  try {
-    const cardId = req.params.cardId;
-    await deleteCard(cardId);
-    await mongoDeleteCard(cardId);
-    res.json({ success: true, message: `Card ${cardId} deleted successfully` });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
+  return res.status(403).json({
+    success: false,
+    error: 'Bingo cards are fixed and cannot be deleted.',
+  });
 });
 
 // Agents API (Super Admin Full CRUD)
