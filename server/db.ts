@@ -274,7 +274,69 @@ function initSchema(database: Database) {
   }
 
   // Seed default fixed bingo cards (CARD-0001 to CARD-0050) if empty
- 
+ // ============================================================
+// ENSURE EXACTLY 75 FIXED BINGO CARDS
+// ============================================================
+
+const cardCountRes = database.exec(
+  'SELECT COUNT(*) as count FROM bingo_cards'
+);
+
+const currentCardCount =
+  cardCountRes.length > 0
+    ? Number(cardCountRes[0].values[0][0])
+    : 0;
+
+const firstCardRes = database.exec(
+  "SELECT cardId FROM bingo_cards WHERE cardId = 'CARD-0001'"
+);
+
+const lastCardRes = database.exec(
+  "SELECT cardId FROM bingo_cards WHERE cardId = 'CARD-0075'"
+);
+
+const hasFirstCard = firstCardRes.length > 0 &&
+  firstCardRes[0].values.length > 0;
+
+const hasLastCard = lastCardRes.length > 0 &&
+  lastCardRes[0].values.length > 0;
+
+const cardsNeedReset =
+  currentCardCount !== FIXED_CARD_COUNT ||
+  !hasFirstCard ||
+  !hasLastCard;
+
+if (cardsNeedReset) {
+  console.log(
+    `Resetting bingo cards: found ${currentCardCount}, expected ${FIXED_CARD_COUNT}`
+  );
+
+  // Only bingo_cards is reset.
+  // Games, agents, transactions, winners, etc. are NOT deleted.
+  database.run('DELETE FROM bingo_cards');
+
+  for (const c of FIXED_BINGO_CARDS) {
+    database.run(
+      `INSERT INTO bingo_cards
+       (cardId, bNumbers, iNumbers, nNumbers, gNumbers, oNumbers, status, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        c.cardId,
+        JSON.stringify(c.bNumbers),
+        JSON.stringify(c.iNumbers),
+        JSON.stringify(c.nNumbers),
+        JSON.stringify(c.gNumbers),
+        JSON.stringify(c.oNumbers),
+        c.status,
+        c.createdAt,
+      ]
+    );
+  }
+
+  console.log(
+    `Created ${FIXED_BINGO_CARDS.length} fixed bingo cards: CARD-0001 to CARD-0075`
+  );
+}
 
   // Seed default system settings
   const defaultSettings: SystemSettings = {
