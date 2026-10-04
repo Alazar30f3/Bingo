@@ -4,7 +4,7 @@ import { Agent, BingoCard, Game, SystemSettings, Transaction, WinnerRecord, Agen
 import { generateBatchFixedCards } from '../src/utils/bingoEngine';
 
 const DEFAULT_URI = 'mongodb+srv://alazar1of1_db_user:QphPyV5OV81xOp72@cluster0.iuxqn6k.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
-const MONGO_URI = process.env.MONGODB_URI || DEFAULT_URI;
+const MONGO_URI = process.env.MONGODB_URI || '';
 const DB_NAME = 'bingo_system';
 
 let client: MongoClient | null = null;
