@@ -27,7 +27,6 @@ export async function connectMongo(): Promise<Db | null> {
       serverSelectionTimeoutMS: 3000,
       connectTimeoutMS: 3000,
       tls: true,
-      tlsAllowInvalidCertificates: true,
       directConnection: false,
     });
 
