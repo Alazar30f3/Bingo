@@ -33,6 +33,9 @@ import {
 import {
   connectMongo,
   getMongoStatus,
+  isMongoConnected,
+  mongoGetAllAgents,
+  mongoGetAgentById,
   mongoCreateAgent,
   mongoUpdateAgent,
   mongoDeleteAgent,
@@ -276,39 +279,110 @@ app.delete('/api/cards/:cardId', async (req, res) => {
 });
 
 // Agents API (Super Admin Full CRUD)
+// ============================================================
+// AGENTS API - MONGODB IS THE SOURCE OF TRUTH
+// ============================================================
+
+// Get all agents
 app.get('/api/agents', async (req, res) => {
   try {
-    const agents = await getAllAgents();
-    res.json({ success: true, agents });
+    if (!isMongoConnected()) {
+      return res.status(503).json({
+        success: false,
+        error: 'MongoDB Atlas is not connected. Agents are temporarily unavailable.',
+      });
+    }
+
+    const agents = await mongoGetAllAgents();
+
+    res.json({
+      success: true,
+      agents,
+    });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('GET /api/agents error:', err);
+
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
   }
 });
 
+// Get one agent
 app.get('/api/agents/:agentId', async (req, res) => {
   try {
-    const agent = await getAgentById(req.params.agentId);
-    if (!agent) {
-      return res.status(404).json({ success: false, error: 'Agent not found' });
+    if (!isMongoConnected()) {
+      return res.status(503).json({
+        success: false,
+        error: 'MongoDB Atlas is not connected.',
+      });
     }
-    res.json({ success: true, agent });
+
+    const agentId = req.params.agentId.toUpperCase();
+
+    const agent = await mongoGetAgentById(agentId);
+
+    if (!agent) {
+      return res.status(404).json({
+        success: false,
+        error: `Agent ${agentId} not found`,
+      });
+    }
+
+    res.json({
+      success: true,
+      agent,
+    });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('GET /api/agents/:agentId error:', err);
+
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
   }
 });
 
-// Create Agent (Super Admin)
+// Create Agent
 app.post('/api/agents', async (req, res) => {
   try {
-    const { agentId, name, location, phone, pin, balance, packageAssigned, deviceId } = req.body;
-    const autoId = agentId ? String(agentId).trim().toUpperCase() : `AGENT-${Math.floor(100 + Math.random() * 900)}`;
-
-    const existing = await getAgentById(autoId);
-    if (existing) {
-      return res.status(400).json({ success: false, error: `Agent ID ${autoId} already exists.` });
+    if (!isMongoConnected()) {
+      return res.status(503).json({
+        success: false,
+        error: 'MongoDB Atlas is not connected. Cannot create agent.',
+      });
     }
 
-    const initialBalance = Number(balance || (packageAssigned?.credits || 0));
+    const {
+      agentId,
+      name,
+      location,
+      phone,
+      pin,
+      balance,
+      packageAssigned,
+      deviceId,
+    } = req.body;
+
+    const autoId = agentId
+      ? String(agentId).trim().toUpperCase()
+      : `AGENT-${Math.floor(100 + Math.random() * 900)}`;
+
+    // Check MongoDB, not SQLite
+    const existing = await mongoGetAgentById(autoId);
+
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        error: `Agent ID ${autoId} already exists.`,
+      });
+    }
+
+    const initialBalance = Number(
+      balance || packageAssigned?.credits || 0
+    );
+
     const now = new Date().toISOString();
 
     const newAgent: Agent = {
@@ -318,164 +392,305 @@ app.post('/api/agents', async (req, res) => {
       phone: phone || '',
       pin: pin || '1234',
       balance: initialBalance,
-      packageAssigned: packageAssigned || (initialBalance > 0 ? {
-        packageName: 'Standard Package',
-        credits: initialBalance,
-        gamesAllowed: Math.floor(initialBalance / 50),
-        costPerGame: 50,
-        assignedAt: now,
-      } : undefined),
-      deviceId: deviceId || `DEV-${uuidv4().substring(0, 8)}`,
+
+      packageAssigned:
+        packageAssigned ||
+        (initialBalance > 0
+          ? {
+              packageName: 'Standard Package',
+              credits: initialBalance,
+              gamesAllowed: Math.floor(initialBalance / 50),
+              costPerGame: 50,
+              assignedAt: now,
+            }
+          : undefined),
+
+      deviceId:
+        deviceId || `DEV-${uuidv4().substring(0, 8)}`,
+
       status: 'ACTIVE',
       createdAt: now,
     };
 
-    const created = await createAgent(newAgent);
-    await mongoCreateAgent(newAgent);
+    // MongoDB is now the MAIN database
+    const created = await mongoCreateAgent(newAgent);
 
-    res.json({ success: true, agent: created });
+    res.json({
+      success: true,
+      agent: created,
+    });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('POST /api/agents error:', err);
+
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
   }
 });
 
-// Update Agent Details (Super Admin)
+// Update Agent
 app.put('/api/agents/:agentId', async (req, res) => {
   try {
-    const agentId = req.params.agentId;
-    const { name, location, phone, pin, deviceId, status } = req.body;
+    if (!isMongoConnected()) {
+      return res.status(503).json({
+        success: false,
+        error: 'MongoDB Atlas is not connected. Cannot update agent.',
+      });
+    }
 
-    const updated = await updateAgent(agentId, {
-      ...(name && { name }),
-      ...(location && { location }),
+    const agentId = req.params.agentId.toUpperCase();
+
+    const {
+      name,
+      location,
+      phone,
+      pin,
+      deviceId,
+      status,
+    } = req.body;
+
+    const existing = await mongoGetAgentById(agentId);
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        error: `Agent ${agentId} not found`,
+      });
+    }
+
+    const updates: Partial<Agent> = {
+      ...(name !== undefined && { name }),
+      ...(location !== undefined && { location }),
       ...(phone !== undefined && { phone }),
-      ...(pin && { pin }),
-      ...(deviceId && { deviceId }),
-      ...(status && { status }),
-    });
+      ...(pin !== undefined && { pin }),
+      ...(deviceId !== undefined && { deviceId }),
+      ...(status !== undefined && { status }),
+    };
+
+    const updated = await mongoUpdateAgent(
+      agentId,
+      updates
+    );
 
     if (!updated) {
-      return res.status(404).json({ success: false, error: `Agent ${agentId} not found` });
+      return res.status(404).json({
+        success: false,
+        error: `Agent ${agentId} not found`,
+      });
     }
 
-    await mongoUpdateAgent(agentId, updated);
-    res.json({ success: true, agent: updated });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// Delete Agent (Super Admin)
-app.delete('/api/agents/:agentId', async (req, res) => {
-  try {
-    const agentId = req.params.agentId;
-    await deleteAgent(agentId);
-    await mongoDeleteAgent(agentId);
-    res.json({ success: true, message: `Agent ${agentId} deleted successfully` });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// Ban / Suspend / Activate Agent (Super Admin)
-app.post('/api/agents/:agentId/status', async (req, res) => {
-  try {
-    const agentId = req.params.agentId;
-    const { status, banReason } = req.body as { status: AgentStatus; banReason?: string };
-
-    if (!status || !['ACTIVE', 'BANNED', 'SUSPENDED'].includes(status)) {
-      return res.status(400).json({ success: false, error: 'Valid status (ACTIVE, BANNED, SUSPENDED) is required' });
-    }
-
-    const updated = await setAgentStatus(agentId, status, banReason);
-    if (!updated) {
-      return res.status(404).json({ success: false, error: `Agent ${agentId} not found` });
-    }
-
-    await mongoSetAgentStatus(agentId, status, banReason);
     res.json({
       success: true,
       agent: updated,
-      message: `Agent ${agentId} status updated to ${status}${banReason ? ` (${banReason})` : ''}`,
     });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('PUT /api/agents/:agentId error:', err);
+
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
   }
 });
 
-// Assign Package to Agent (Super Admin)
-app.post('/api/agents/:agentId/package', async (req, res) => {
+// Delete Agent
+app.delete('/api/agents/:agentId', async (req, res) => {
   try {
-    const agentId = req.params.agentId;
-    const { packageName, credits, gamesAllowed, price, note } = req.body;
-
-    const numCredits = Number(credits);
-    if (!numCredits || numCredits <= 0) {
-      return res.status(400).json({ success: false, error: 'Valid package credits amount required' });
+    if (!isMongoConnected()) {
+      return res.status(503).json({
+        success: false,
+        error: 'MongoDB Atlas is not connected. Cannot delete agent.',
+      });
     }
 
-    const result = await assignPackageToAgent(
+    const agentId = req.params.agentId.toUpperCase();
+
+    const existing = await mongoGetAgentById(agentId);
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        error: `Agent ${agentId} not found`,
+      });
+    }
+
+    const deleted = await mongoDeleteAgent(agentId);
+
+    if (!deleted) {
+      return res.status(500).json({
+        success: false,
+        error: `Failed to delete Agent ${agentId}`,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Agent ${agentId} deleted successfully`,
+    });
+  } catch (err: any) {
+    console.error('DELETE /api/agents/:agentId error:', err);
+
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+
+// Ban / Suspend / Activate Agent
+app.post('/api/agents/:agentId/status', async (req, res) => {
+  try {
+    if (!isMongoConnected()) {
+      return res.status(503).json({
+        success: false,
+        error: 'MongoDB Atlas is not connected. Cannot change agent status.',
+      });
+    }
+
+    const agentId = req.params.agentId.toUpperCase();
+
+    const {
+      status,
+      banReason,
+    } = req.body as {
+      status: AgentStatus;
+      banReason?: string;
+    };
+
+    if (
+      !status ||
+      !['ACTIVE', 'BANNED', 'SUSPENDED'].includes(status)
+    ) {
+      return res.status(400).json({
+        success: false,
+        error:
+          'Valid status (ACTIVE, BANNED, SUSPENDED) is required',
+      });
+    }
+
+    const existing = await mongoGetAgentById(agentId);
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        error: `Agent ${agentId} not found`,
+      });
+    }
+
+    const updated = await mongoSetAgentStatus(
       agentId,
-      {
-        packageName: packageName || 'Custom Bingo Package',
-        credits: numCredits,
-        gamesAllowed: Number(gamesAllowed) || Math.floor(numCredits / 50),
-        costPerGame: 50,
-        price: price ? Number(price) : undefined,
-      },
+      status,
+      banReason
+    );
+
+    if (!updated) {
+      return res.status(404).json({
+        success: false,
+        error: `Agent ${agentId} not found`,
+      });
+    }
+
+    res.json({
+      success: true,
+      agent: updated,
+      message: `Agent ${agentId} status updated to ${status}${
+        banReason ? ` (${banReason})` : ''
+      }`,
+    });
+  } catch (err: any) {
+    console.error(
+      'POST /api/agents/:agentId/status error:',
+      err
+    );
+
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+
+// Assign Package to Agent
+app.post('/api/agents/:agentId/package', async (req, res) => {
+  try {
+    if (!isMongoConnected()) {
+      return res.status(503).json({
+        success: false,
+        error: 'MongoDB Atlas is not connected. Cannot assign package.',
+      });
+    }
+
+    const agentId = req.params.agentId.toUpperCase();
+
+    const {
+      packageName,
+      credits,
+      gamesAllowed,
+      price,
+      note,
+    } = req.body;
+
+    const numCredits = Number(credits);
+
+    if (!numCredits || numCredits <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Valid package credits amount required',
+      });
+    }
+
+    const assignment: AgentPackageAssignment = {
+      packageName:
+        packageName || 'Custom Bingo Package',
+
+      credits: numCredits,
+
+      gamesAllowed:
+        Number(gamesAllowed) ||
+        Math.floor(numCredits / 50),
+
+      costPerGame: 50,
+
+      assignedAt: new Date().toISOString(),
+
+      price:
+        price !== undefined
+          ? Number(price)
+          : undefined,
+    };
+
+    const result = await mongoAssignPackage(
+      agentId,
+      assignment,
       note
     );
 
-    // Sync to MongoDB
-    await mongoAssignPackage(
-      agentId,
-      {
-        packageName: packageName || 'Custom Bingo Package',
-        credits: numCredits,
-        gamesAllowed: Number(gamesAllowed) || Math.floor(numCredits / 50),
-        costPerGame: 50,
-        assignedAt: new Date().toISOString(),
-        price: price ? Number(price) : undefined,
-      },
-      note
-    );
+    if (!result) {
+      return res.status(404).json({
+        success: false,
+        error: `Agent ${agentId} not found`,
+      });
+    }
 
     res.json({
       success: true,
       agent: result.agent,
       transaction: result.transaction,
-      message: `Successfully assigned ${packageName} to ${agentId}`,
+      message: `Successfully assigned ${assignment.packageName} to ${agentId}`,
     });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// Topup / Direct credit adjustment
-app.post('/api/agents/:agentId/topup', async (req, res) => {
-  try {
-    const { amount, note, deviceId } = req.body;
-    const numAmount = Number(amount);
-    if (!numAmount || numAmount <= 0) {
-      return res.status(400).json({ success: false, error: 'Positive credit amount is required' });
-    }
-
-    const result = await adjustAgentCredit(
-      req.params.agentId,
-      numAmount,
-      'PACKAGE_CREDIT',
-      note || `Package credit top-up (+${numAmount})`,
-      undefined,
-      deviceId
+    console.error(
+      'POST /api/agents/:agentId/package error:',
+      err
     );
 
-    res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
   }
 });
-
-
 // Games API
 app.get('/api/games', async (req, res) => {
   try {
