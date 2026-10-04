@@ -59,7 +59,9 @@ export function getMongoStatus() {
     mode: isConnected ? 'ONLINE_ATLAS' : 'OFFLINE_LOCAL_SQLITE',
   };
 }
-
+export function isMongoConnected(): boolean {
+  return isConnected && db !== null;
+}
 async function seedMongoDb(database: Db) {
   try {
     const adminsCol = database.collection('admins');
