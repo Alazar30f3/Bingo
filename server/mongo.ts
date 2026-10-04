@@ -4,7 +4,7 @@ import { Agent, BingoCard, Game, SystemSettings, Transaction, WinnerRecord, Agen
 import { generateBatchFixedCards } from '../src/utils/bingoEngine';
 
 const DEFAULT_URI = 'mongodb+srv://alazar1of1_db_user:QphPyV5OV81xOp72@cluster0.iuxqn6k.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
-const MONGO_URI = process.env.MONGODB_URI || 'mongodb+srv://alazar1of1_db_user:QphPyV5OV81xOp72@cluster0.iuxqn6k.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
+const MONGO_URI = process.env.MONGODB_URI || '';
 const DB_NAME = 'bingo_system';
 
 let client: MongoClient | null = null;
@@ -16,9 +16,13 @@ let connectionTimestamp: string | null = null;
 export async function connectMongo(): Promise<Db | null> {
   if (db && isConnected) return db;
 
-  try {
-    const maskedUri = MONGO_URI.replace(/:([^:@]+)@/, ':****@');
-    console.log(`Checking MongoDB Atlas connection at ${maskedUri}...`);
+ try {
+  if (!MONGO_URI) {
+    throw new Error('MONGODB_URI environment variable is missing');
+  }
+
+  const maskedUri = MONGO_URI.replace(/:([^:@]+)@/, ':****@');
+  console.log(`Checking MongoDB Atlas connection at ${maskedUri}...`);
     client = new MongoClient(MONGO_URI, {
       serverSelectionTimeoutMS: 3000,
       connectTimeoutMS: 3000,
@@ -37,12 +41,17 @@ export async function connectMongo(): Promise<Db | null> {
     // Initialize collections & seeds
     await seedMongoDb(db);
     return db;
-  } catch (err: any) {
-    isConnected = false;
-    connectionError = 'Standby mode (Local SQLite Active)';
-    console.log('ℹ️ Running in Offline-First Local SQLite Database Engine (MongoDB Atlas standby)');
-    return null;
-  }
+} catch (err: any) {
+  isConnected = false;
+  db = null;
+
+  connectionError = err?.message || 'MongoDB connection failed';
+
+  console.error('❌ MongoDB Atlas connection failed');
+  console.error('MongoDB error:', connectionError);
+
+  return null;
+}
 }
 
 export function getMongoDb(): Db | null {
