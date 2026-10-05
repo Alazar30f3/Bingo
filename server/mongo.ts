@@ -1,9 +1,8 @@
-import { MongoClient, Db, Collection } from 'mongodb';
+import { MongoClient, Db } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
 import { Agent, BingoCard, Game, SystemSettings, Transaction, WinnerRecord, AgentStatus, AgentPackageAssignment } from '../src/types/bingo';
 import { generateBatchFixedCards } from '../src/utils/bingoEngine';
 
-const DEFAULT_URI = 'mongodb+srv://alazar1of1_db_user:QphPyV5OV81xOp72@cluster0.iuxqn6k.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
 const MONGO_URI = process.env.MONGODB_URI || '';
 const DB_NAME = 'bingo_system';
 
@@ -24,13 +23,18 @@ export async function connectMongo(): Promise<Db | null> {
   const maskedUri = MONGO_URI.replace(/:([^:@]+)@/, ':****@');
   console.log(`Checking MongoDB Atlas connection at ${maskedUri}...`);
     client = new MongoClient(MONGO_URI, {
-      serverSelectionTimeoutMS: 3000,
-      connectTimeoutMS: 3000,
+      serverSelectionTimeoutMS: 10000,
+      connectTimeoutMS: 10000,
       tls: true,
       directConnection: false,
+      retryWrites: true,
     });
 
     await client.connect();
+
+    // Verify that Atlas is reachable and credentials are valid.
+    await client.db('admin').command({ ping: 1 });
+
     db = client.db(DB_NAME);
     isConnected = true;
     connectionError = null;
@@ -61,7 +65,9 @@ export function getMongoStatus() {
   return {
     isConnected,
     error: connectionError,
-    uri: MONGO_URI.replace(/:([^:@]+)@/, ':****@'),
+    uri: MONGO_URI
+      ? MONGO_URI.replace(/:([^:@]+)@/, ':****@')
+      : '(not configured)',
     dbName: DB_NAME,
     timestamp: connectionTimestamp,
     mode: isConnected ? 'ONLINE_ATLAS' : 'OFFLINE_LOCAL_SQLITE',
@@ -77,6 +83,15 @@ async function seedMongoDb(database: Db) {
     const cardsCol = database.collection('cards');
     const settingsCol = database.collection('settings');
     const transactionsCol = database.collection('transactions');
+
+    // Helpful indexes and uniqueness constraints.
+    await Promise.all([
+      adminsCol.createIndex({ username: 1 }, { unique: true }),
+      agentsCol.createIndex({ agentId: 1 }, { unique: true }),
+      cardsCol.createIndex({ cardId: 1 }, { unique: true }),
+      settingsCol.createIndex({ key: 1 }, { unique: true }),
+      transactionsCol.createIndex({ transactionId: 1 }, { unique: true }),
+    ]);
 
     // 1. Seed Super Admin
     const adminCount = await adminsCol.countDocuments({ username: 'admin' });
@@ -175,13 +190,26 @@ async function seedMongoDb(database: Db) {
       console.log('🌱 Seeded default Agents & Packages into MongoDB');
     }
 
-    // 3. Seed Fixed Cards
-    const cardCount = await cardsCol.countDocuments();
-    if (cardCount === 0) {
-      const cards = generateBatchFixedCards(50, 1, 'CARD-');
-      await cardsCol.insertMany(cards);
-      console.log(`🌱 Seeded ${cards.length} Fixed Bingo Cards into MongoDB`);
-    }
+    // 3. Ensure the complete fixed CARD-0001 ... CARD-0075 set exists.
+    // These cards are deterministic and permanent.
+    const fixedCards = generateBatchFixedCards(75, 1, 'CARD-');
+
+    await cardsCol.bulkWrite(
+      fixedCards.map((card) => ({
+        replaceOne: {
+          filter: { cardId: card.cardId },
+          replacement: card,
+          upsert: true,
+        },
+      })),
+      { ordered: false }
+    );
+
+    const fixedCardCount = await cardsCol.countDocuments({
+      cardId: /^CARD-\\d{4}$/,
+    });
+
+    console.log(`✅ MongoDB fixed card set verified: ${fixedCardCount}/75 cards`);
 
     // 4. Seed Settings
     const settingsCount = await settingsCol.countDocuments({ key: 'app_config' });
@@ -203,7 +231,7 @@ async function seedMongoDb(database: Db) {
           'PLUS_CROSS',
           'FULL_CARD_BLACKOUT',
         ],
-        centralServerUrl: MONGO_URI,
+        centralServerUrl: process.env.CENTRAL_SERVER_URL || '',
         centerFreeText: 'FREE',
       };
       await settingsCol.insertOne({
@@ -316,6 +344,71 @@ export async function mongoAssignPackage(
 
   const updatedAgent = await mongoGetAgentById(agentId);
   return { agent: updatedAgent!, transaction };
+}
+
+// CREDIT / GAME BALANCE
+export async function mongoAdjustAgentCredit(
+  agentId: string,
+  amount: number,
+  note = 'Balance adjustment',
+  transactionType: Transaction['type'] = 'GAME_PLAY' as Transaction['type']
+): Promise<{ agent: Agent; transaction: Transaction } | null> {
+  const database = getMongoDb();
+  if (!database) return null;
+
+  const agentsCol = database.collection<Agent>('agents');
+  const txCol = database.collection<Transaction>('transactions');
+
+  const currentAgent = await mongoGetAgentById(agentId);
+  if (!currentAgent) return null;
+
+  const oldBalance = Number(currentAgent.balance || 0);
+  const newBalance = oldBalance + Number(amount);
+
+  if (!Number.isFinite(amount)) {
+    throw new Error('Invalid credit amount.');
+  }
+
+  if (newBalance < 0) {
+    throw new Error('Insufficient agent balance.');
+  }
+
+  const now = new Date().toISOString();
+  const transaction: Transaction = {
+    transactionId: uuidv4(),
+    agentId,
+    deviceId: currentAgent.deviceId,
+    type: transactionType,
+    amount,
+    balanceAfter: newBalance,
+    note,
+    createdAt: now,
+    syncStatus: 'SYNCED',
+  };
+
+  const updateResult = await agentsCol.updateOne(
+    { agentId },
+    {
+      $set: {
+        balance: newBalance,
+        lastSync: now,
+      },
+    }
+  );
+
+  if (updateResult.matchedCount === 0) {
+    return null;
+  }
+
+  await txCol.insertOne(transaction);
+
+  const updatedAgent = await mongoGetAgentById(agentId);
+  if (!updatedAgent) return null;
+
+  return {
+    agent: updatedAgent,
+    transaction,
+  };
 }
 
 // CARDS CRUD
