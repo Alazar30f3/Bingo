@@ -9,13 +9,6 @@ import {
   getCardById,
   insertBatchCards,
   deleteCard,
-  getAllAgents,
-  getAgentById,
-  createAgent,
-  updateAgent,
-  deleteAgent,
-  setAgentStatus,
-  assignPackageToAgent,
   adjustAgentCredit,
   getTransactions,
   saveGameRecord,
@@ -97,7 +90,7 @@ app.use(express.json());
 app.get('/api/db/status', async (req, res) => {
   try {
     const mongoStatus = getMongoStatus();
-    const agents = await getAllAgents();
+    const agents = isMongoConnected() ? await mongoGetAllAgents() : [];
     const cards = await getAllCards();
     const games = await getAllGames();
     res.json({
@@ -118,20 +111,30 @@ app.get('/api/db/status', async (req, res) => {
 // Unified Auth Login Endpoint (Super Admin & Agent)
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const { role, username, password, agentId, pin } = req.body;
-    const inputIdentifier = (username || agentId || '').trim();
-    const inputSecret = (password || pin || '').trim();
+    const { username, password, agentId, pin } = req.body;
+
+    const inputIdentifier = String(username || agentId || '').trim();
+    const inputSecret = String(password || pin || '').trim();
 
     if (!inputIdentifier) {
-      return res.status(400).json({ success: false, error: 'Username is required.' });
+      return res.status(400).json({
+        success: false,
+        error: 'Username is required.',
+      });
     }
+
     if (!inputSecret) {
-      return res.status(400).json({ success: false, error: 'Password is required.' });
+      return res.status(400).json({
+        success: false,
+        error: 'Password is required.',
+      });
     }
 
     const cleanLowerId = inputIdentifier.toLowerCase();
 
-    // 1. Check if it is Super Admin
+    // =========================================================
+    // 1. SUPER ADMIN LOGIN
+    // =========================================================
     if (
       cleanLowerId === 'admin' ||
       cleanLowerId === 'superadmin' ||
@@ -156,68 +159,92 @@ app.post('/api/auth/login', async (req, res) => {
           },
         });
       }
+
       return res.status(401).json({
         success: false,
         error: 'Invalid password for Super Admin. Use password: admin123',
       });
     }
 
-    // 2. Check if it is an Agent (by Agent ID, number, alias, or Agent Name)
-    const allAgents = await getAllAgents();
-    let agent = allAgents.find(
-      (a) =>
-        a.agentId.toLowerCase() === cleanLowerId ||
-        a.agentId.toLowerCase().replace('agent-', '') === cleanLowerId ||
-        a.name.toLowerCase() === cleanLowerId ||
-        a.name.toLowerCase().includes(cleanLowerId)
-    );
-
-    // Generic "agent" or "operator" keyword falls back to primary agent
-    if (!agent && (cleanLowerId === 'agent' || cleanLowerId === 'operator' || cleanLowerId === 'caller')) {
-      agent = allAgents.find((a) => a.status === 'ACTIVE') || allAgents[0];
-    }
-
-    if (agent) {
-      // Validate Agent PIN / password (allow agent pin or standard demo pins)
-      const isValidPin =
-        agent.pin === inputSecret ||
-        inputSecret === '1234' ||
-        inputSecret === 'admin123' ||
-        inputSecret === 'admin';
-
-      if (!isValidPin) {
-        return res.status(401).json({
-          success: false,
-          error: `Invalid PIN for Agent ${agent.agentId}. Use PIN: ${agent.pin || '1234'}`,
-        });
-      }
-
-      // Check Ban / Suspension Status
-      if (agent.status === 'BANNED' || agent.status === 'SUSPENDED') {
-        return res.status(403).json({
-          success: false,
-          error: `Agent account is ${agent.status}. Reason: ${agent.banReason || 'Administrative restriction'}.`,
-        });
-      }
-
-      return res.json({
-        success: true,
-        user: {
-          id: agent.agentId,
-          role: 'AGENT',
-          name: agent.name,
-          agent,
-        },
+    // =========================================================
+    // 2. AGENT LOGIN - MONGODB ATLAS IS THE SOURCE OF TRUTH
+    // =========================================================
+    if (!isMongoConnected()) {
+      return res.status(503).json({
+        success: false,
+        error:
+          'MongoDB Atlas is not connected. Agent login is temporarily unavailable.',
       });
     }
 
-    // 3. If not matched, provide default credential guidance
-    return res.status(401).json({
-      success: false,
-      error: 'Invalid username or password. Default logins: Super Admin (username: admin, password: admin123) or Agent (username: AGENT-101, password: 1234)',
+    const allAgents = await mongoGetAllAgents();
+
+    let agent = allAgents.find(
+      (a) =>
+        String(a.agentId || '').toLowerCase() === cleanLowerId ||
+        String(a.agentId || '').toLowerCase().replace('agent-', '') ===
+          cleanLowerId ||
+        String(a.name || '').toLowerCase() === cleanLowerId ||
+        String(a.name || '').toLowerCase().includes(cleanLowerId)
+    );
+
+    // Generic agent/operator login falls back to the first active agent.
+    if (
+      !agent &&
+      (
+        cleanLowerId === 'agent' ||
+        cleanLowerId === 'operator' ||
+        cleanLowerId === 'caller'
+      )
+    ) {
+      agent =
+        allAgents.find((a) => a.status === 'ACTIVE') ||
+        allAgents[0];
+    }
+
+    if (!agent) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid username or password.',
+      });
+    }
+
+    // Only the agent's real PIN is accepted.
+    const isValidPin = String(agent.pin || '') === inputSecret;
+
+    if (!isValidPin) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid username or password.',
+      });
+    }
+
+    // Check account status.
+    if (agent.status === 'BANNED' || agent.status === 'SUSPENDED') {
+      return res.status(403).json({
+        success: false,
+        error: `Agent account is ${agent.status}. Reason: ${
+          agent.banReason || 'Administrative restriction'
+        }.`,
+      });
+    }
+
+    return res.json({
+      success: true,
+      user: {
+        id: agent.agentId,
+        role: 'AGENT',
+        name: agent.name,
+        agent,
+      },
     });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('POST /api/auth/login error:', err);
+
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Login failed.',
+    });
   }
 });
 
@@ -895,7 +922,7 @@ app.get('/api/winners', async (req, res) => {
 app.get('/api/reports/summary', async (req, res) => {
   try {
     const cards = await getAllCards();
-    const agents = await getAllAgents();
+    const agents = isMongoConnected() ? await mongoGetAllAgents() : [];
     const games = await getAllGames();
     const transactions = await getTransactions();
     const winners = await getAllWinners();
